@@ -107,7 +107,7 @@ func (cr *JobController) Create(cx *goweb.Context) {
 		//cwlWorkflowFileBase := path.Base(cwlWorkflowFileName)
 		//1) parse job
 
-		var jobInput *cwl.Job_document
+		var jobInput cwl.Job_document
 
 		if hasJob {
 			jobStream, err := ioutil.ReadFile(jobFile.Path)
@@ -125,7 +125,7 @@ func (cr *JobController) Create(cx *goweb.Context) {
 				return
 			}
 		} else {
-			jobInput = &cwl.Job_document{} // no input
+			jobInput = cwl.Job_document{} // no input
 		}
 		//collection.Job_input = job_input
 

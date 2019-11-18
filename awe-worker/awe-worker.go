@@ -154,7 +154,7 @@ func main() {
 
 		workunit := &core.Workunit{ID: "00000000-0000-0000-0000-000000000000_0_0", CWLWorkunit: core.NewCWLWorkunit()}
 
-		workunit.CWLWorkunit.JobInput = jobDoc
+		workunit.CWLWorkunit.JobInput = &jobDoc
 		workunit.CWLWorkunit.JobInputFilename = conf.CWL_JOB
 
 		workunit.CWLWorkunit.ToolFilename = conf.CWL_TOOL

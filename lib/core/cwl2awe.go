@@ -56,7 +56,7 @@ func parseSourceString(source string, id string) (linkedStepName string, fieldna
 }
 
 // CWLInputCheck _
-func CWLInputCheck(jobInput *cwl.Job_document, cwlWorkflow *cwl.Workflow, context *cwl.WorkflowContext) (jobInputNew *cwl.Job_document, err error) {
+func CWLInputCheck(jobInput cwl.Job_document, cwlWorkflow *cwl.Workflow, context *cwl.WorkflowContext) (jobInputNew cwl.Job_document, err error) {
 
 	//jobInput := *(collection.Job_input)
 
@@ -244,13 +244,13 @@ func CWLInputCheck(jobInput *cwl.Job_document, cwlWorkflow *cwl.Workflow, contex
 // }
 
 // CWL2AWE _
-func CWL2AWE(_user *user.User, files FormFiles, jobInput *cwl.Job_document, cwlWorkflow *cwl.Workflow, entrypoint string, context *cwl.WorkflowContext) (job *Job, err error) {
+func CWL2AWE(_user *user.User, files FormFiles, jobInput cwl.Job_document, cwlWorkflow *cwl.Workflow, entrypoint string, context *cwl.WorkflowContext) (job *Job, err error) {
 
 	// check that all expected workflow inputs exist and that they have the correct type
 	logger.Debug(1, "(CWL2AWE) CWL2AWE starting..")
 	defer logger.Debug(1, "(CWL2AWE) CWL2AWE leaving...")
 
-	var jobInputNew *cwl.Job_document
+	var jobInputNew cwl.Job_document
 	jobInputNew, err = CWLInputCheck(jobInput, cwlWorkflow, context)
 	if err != nil {
 		err = fmt.Errorf("(CWL2AWE) CWLInputCheck returned: %s", err.Error())
@@ -308,13 +308,13 @@ func CWL2AWE(_user *user.User, files FormFiles, jobInput *cwl.Job_document, cwlW
 	// *** create WorkflowInstance
 
 	var wi *WorkflowInstance
-	wi, err = NewWorkflowInstance(entrypoint, job.ID, cwlWorkflow.ID, job, "") // Not using AddWorkflowInstance to avoid mongo
+	wi, err = NewWorkflowInstance(entrypoint, job.ID, cwlWorkflow.ID, job, "", "") // Not using AddWorkflowInstance to avoid mongo
 	if err != nil {
 		err = fmt.Errorf("(CWL2AWE) NewWorkflowInstance returned: %s", err.Error())
 		return
 	}
 
-	wi.Inputs = *jobInputNew
+	wi.Inputs = jobInputNew
 	logger.Debug(1, "(CWL2AWE) WorkflowInstance %s created", entrypoint)
 
 	// create path

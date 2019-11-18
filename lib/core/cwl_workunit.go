@@ -55,7 +55,7 @@ func NewCWLWorkunitFromInterface(native interface{}, baseIdentifier string, cont
 				err = fmt.Errorf("(NewCWLWorkunitFromInterface) NewJob_document failed: %s", xerr.Error())
 				return
 			}
-			workunit.JobInput = jobInput
+			workunit.JobInput = &jobInput
 
 		}
 

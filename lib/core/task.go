@@ -262,11 +262,13 @@ func (task *TaskRaw) InitRaw(job *Job, jobID string) (changed bool, err error) {
 
 	if task.StepOutputInterface != nil {
 		context = job.WorkflowContext
-		task.StepOutput, err = cwl.NewJob_documentFromNamedTypes(task.StepOutputInterface, context)
+		var stepOutput cwl.Job_document
+		stepOutput, err = cwl.NewJob_documentFromNamedTypes(task.StepOutputInterface, context)
 		if err != nil {
 			err = fmt.Errorf("(InitRaw) cwl.NewJob_documentFromNamedTypes returned: %s", err.Error())
 			return
 		}
+		task.StepOutput = &stepOutput
 	}
 
 	// if CwlVersion != "" {

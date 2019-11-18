@@ -23,7 +23,7 @@ type Job_document []NamedCWLType // JobDocArray
 type JobDocMap map[string]CWLType
 
 // Add _
-func (j *Job_document) Add(id string, value CWLType) (newDoc *Job_document) {
+func (j *Job_document) Add(id string, value CWLType) (newDoc Job_document) {
 	x := NewNamedCWLType(id, value)
 
 	jNpt := *j
@@ -32,7 +32,7 @@ func (j *Job_document) Add(id string, value CWLType) (newDoc *Job_document) {
 
 	newArrayNptr := Job_document(append(array, x))
 
-	newDoc = &newArrayNptr
+	newDoc = newArrayNptr
 	return
 }
 
@@ -94,7 +94,7 @@ func (job_input *Job_document) GetMap() (job_input_map JobDocMap) {
 }
 
 // NewJobDocument _
-func NewJobDocument(original interface{}, context *WorkflowContext) (job *Job_document, err error) {
+func NewJobDocument(original interface{}, context *WorkflowContext) (job Job_document, err error) {
 
 	logger.Debug(3, "(NewJobDocument) starting")
 
@@ -103,39 +103,39 @@ func NewJobDocument(original interface{}, context *WorkflowContext) (job *Job_do
 		return
 	}
 
-	job_nptr := Job_document{}
+	//job_nptr := Job_document{}
 
-	job = &job_nptr
+	job = Job_document{}
 
 	switch original.(type) {
 
 	case map[string]interface{}:
 
-		original_map := original.(map[string]interface{})
+		originalMap := original.(map[string]interface{})
 
-		for key_str, value := range original_map {
+		for keyStr, value := range originalMap {
 
-			cwl_obj, xerr := NewCWLType(key_str, "", value, context)
+			cwlObj, xerr := NewCWLType(keyStr, "", value, context)
 			if xerr != nil {
 				err = fmt.Errorf("(NewJobDocument) NewCWLType returned: %s", xerr.Error())
 				return
 			}
-			job_nptr = append(job_nptr, NewNamedCWLType(key_str, cwl_obj))
+			job = append(job, NewNamedCWLType(keyStr, cwlObj))
 
 		}
 		return
 
 	case []interface{}:
-		original_array := original.([]interface{})
+		originalArray := original.([]interface{})
 
-		for _, value := range original_array {
+		for _, value := range originalArray {
 
-			cwl_obj, xerr := NewCWLType("", "", value, context)
+			cwlObj, xerr := NewCWLType("", "", value, context)
 			if xerr != nil {
 				err = fmt.Errorf("(NewJobDocument) NewCWLType returned: %s", xerr.Error())
 				return
 			}
-			job_nptr = append(job_nptr, NewNamedCWLType("not supported", cwl_obj))
+			job = append(job, NewNamedCWLType("not supported", cwlObj))
 
 		}
 
@@ -148,7 +148,7 @@ func NewJobDocument(original interface{}, context *WorkflowContext) (job *Job_do
 	return
 }
 
-func NewJob_documentFromNamedTypes(original interface{}, context *WorkflowContext) (job *Job_document, err error) {
+func NewJob_documentFromNamedTypes(original interface{}, context *WorkflowContext) (job Job_document, err error) {
 
 	logger.Debug(3, "(NewJob_documentFromNamedTypes) starting")
 
@@ -163,7 +163,7 @@ func NewJob_documentFromNamedTypes(original interface{}, context *WorkflowContex
 		return
 	}
 
-	job_nptr := Job_document{}
+	job = Job_document{}
 
 	switch original.(type) {
 
@@ -179,10 +179,10 @@ func NewJob_documentFromNamedTypes(original interface{}, context *WorkflowContex
 				return
 			}
 
-			job_nptr = append(job_nptr, cwl_obj_named)
+			job = append(job, cwl_obj_named)
 
 		}
-		job = &job_nptr
+		//job = job_nptr
 		return
 	default:
 
@@ -191,7 +191,8 @@ func NewJob_documentFromNamedTypes(original interface{}, context *WorkflowContex
 	return
 }
 
-func ParseJobFile(job_file string) (job_input *Job_document, err error) {
+// ParseJobFile _
+func ParseJobFile(job_file string) (job_input Job_document, err error) {
 
 	job_stream, err := ioutil.ReadFile(job_file)
 	if err != nil {
@@ -214,7 +215,8 @@ func ParseJobFile(job_file string) (job_input *Job_document, err error) {
 	return
 }
 
-func ParseJob(job_byte_ptr *[]byte) (job_input *Job_document, err error) {
+// ParseJob _
+func ParseJob(job_byte_ptr *[]byte) (job_input Job_document, err error) {
 
 	// since Unmarshal (json and yaml) cannot unmarshal into interface{}, we try array and map
 

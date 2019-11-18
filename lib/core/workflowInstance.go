@@ -61,32 +61,40 @@ type WorkflowInstance struct {
 	LocalID             string `bson:"local_id" json:"local_id" mapstructure:"local_id"` // human-readable workfow id without job id
 	JobID               string `bson:"job_id" json:"job_id" mapstructure:"job_id"`
 	ProcessInstanceBase `bson:",inline" json:",inline" mapstructure:",squash"`
-	ACL                 *acl.Acl          `bson:"acl" json:"-"`
-	WorkflowDefinition  string            `bson:"workflow_definition" json:"workflow_definition" mapstructure:"workflow_definition"` // name of the workflow this instance is derived from
-	Workflow            *cwl.Workflow     `bson:"-" json:"-" mapstructure:"-"`                                                       // just a cache for the Workflow pointer
-	Inputs              cwl.Job_document  `bson:"inputs" json:"inputs" mapstructure:"inputs"`
-	Outputs             cwl.Job_document  `bson:"outputs" json:"outputs" mapstructure:"outputs"`
-	Tasks               []*Task           `bson:"tasks" json:"tasks" mapstructure:"tasks"`
-	RemainSteps         int               `bson:"remainsteps" json:"remainsteps" mapstructure:"remainsteps"`
-	TotalTasks          int               `bson:"totaltasks" json:"totaltasks" mapstructure:"totaltasks"`
-	Subworkflows        []string          `bson:"subworkflows" json:"subworkflows" mapstructure:"subworkflows"`
-	WorkflowStep        *cwl.WorkflowStep `bson:"-" json:"-" mapstructure:"-"` // cache
-	Parent              *WorkflowInstance `bson:"-" json:"-" mapstructure:"-"` // cache for ParentId
-	Job                 *Job              `bson:"-" json:"-" mapstructure:"-"` // cache
+	ACL                 *acl.Acl            `bson:"acl" json:"-"`
+	WorkflowDefinition  string              `bson:"workflow_definition" json:"workflow_definition" mapstructure:"workflow_definition"` // name of the workflow this instance is derived from
+	Workflow            *cwl.Workflow       `bson:"-" json:"-" mapstructure:"-"`                                                       // just a cache for the Workflow pointer
+	Inputs              cwl.Job_document    `bson:"inputs" json:"inputs" mapstructure:"inputs"`
+	Outputs             cwl.Job_document    `bson:"outputs" json:"outputs" mapstructure:"outputs"`
+	Tasks               []*Task             `bson:"tasks" json:"tasks" mapstructure:"tasks"`
+	WorkflowInstances   []*WorkflowInstance `bson:"-" json:"-" mapstructure:"-"` // cache TODO make sure this is populated correctly (children and scatter children)
+	RemainSteps         int                 `bson:"remainsteps" json:"remainsteps" mapstructure:"remainsteps"`
+	TotalTasks          int                 `bson:"totaltasks" json:"totaltasks" mapstructure:"totaltasks"`
+	Subworkflows        []string            `bson:"subworkflows" json:"subworkflows" mapstructure:"subworkflows"`
+	WorkflowStep        *cwl.WorkflowStep   `bson:"-" json:"-" mapstructure:"-"` // cache
+	Parent              *WorkflowInstance   `bson:"-" json:"-" mapstructure:"-"` // cache for ParentId
+	Job                 *Job                `bson:"-" json:"-" mapstructure:"-"` // cache
 	//IsScatter           bool              `bson:"isscatter" json:"isscatter" mapstructure:"isscatter"`
 	ScatterParent string `bson:"scatter_parent" json:"scatter_parent" mapstructure:"scatter_parent"`
 	//Created_by          string            `bson:"created_by" json:"created_by" mapstructure:"created_by"`
 }
 
 // NewWorkflowInstance _
-func NewWorkflowInstance(localID string, jobid string, workflowDefinition string, job *Job, parentWorkflowInstanceID string) (wi *WorkflowInstance, err error) {
+func NewWorkflowInstance(localID string, jobid string, workflowDefinition string, job *Job, parentWorkflowInstanceID string, scatterParent string) (wi *WorkflowInstance, err error) {
 
 	if jobid == "" {
 		err = fmt.Errorf("(NewWorkflowInstance) jobid == \"\"")
 		return
 	}
 
-	logger.Debug(3, "(NewWorkflowInstance) _local_id=%s%s, workflow_definition=%s", jobid, localID, workflowDefinition)
+	logger.Debug(3, "(NewWorkflowInstance) _local_id=%s%s, workflow_definition=%s scatterParent=%s", jobid, localID, workflowDefinition, scatterParent)
+
+	// if workflowDefinition != "#v1.0/count-lines18-wf.cwl" && !strings.HasPrefix(workflowDefinition, "#v1.0/count-lines18-wf.cwl/step1") && scatterParent == "" {
+
+	// 	err = fmt.Errorf("(NewWorkflowInstance) scatterParent empty !? (workflowDefinition=%s) ", workflowDefinition)
+	// 	return
+
+	// }
 
 	if job == nil {
 		err = fmt.Errorf("(NewWorkflowInstance) job==nil ")
@@ -97,6 +105,8 @@ func NewWorkflowInstance(localID string, jobid string, workflowDefinition string
 
 	wi = &WorkflowInstance{ID: id, LocalID: localID, JobID: jobid, WorkflowDefinition: workflowDefinition}
 	wi.State = WIStateInit
+
+	wi.ScatterParent = scatterParent
 
 	_, err = wi.Init(job)
 	if err != nil {
@@ -130,26 +140,26 @@ func NewWorkflowInstanceFromInterface(original interface{}, job *Job, context *c
 
 		inputsIf, hasInputs := originalMap["inputs"]
 		if hasInputs {
-			var inputs *cwl.Job_document
+			var inputs cwl.Job_document
 			inputs, err = cwl.NewJob_documentFromNamedTypes(inputsIf, context)
 			if err != nil {
 				err = fmt.Errorf("(NewWorkflowInstanceFromInterface) (for inputs) NewJob_document returned: %s", err.Error())
 				return
 			}
 
-			originalMap["inputs"] = *inputs
+			originalMap["inputs"] = inputs
 		}
 
 		outputsIf, hasOutputs := originalMap["outputs"]
 		if hasOutputs {
-			var outputs *cwl.Job_document
+			var outputs cwl.Job_document
 			outputs, err = cwl.NewJob_documentFromNamedTypes(outputsIf, context)
 			if err != nil {
 				err = fmt.Errorf("(NewWorkflowInstanceFromInterface) (for outputs) NewJob_document returned: %s", err.Error())
 				return
 			}
 
-			originalMap["outputs"] = *outputs
+			originalMap["outputs"] = outputs
 
 		}
 
@@ -1054,4 +1064,131 @@ func (wi *WorkflowInstance) GetJob(readLock bool) (job *Job, err error) {
 
 	return
 
+}
+
+// FinalizeScatter check if all scatter children are done. invoked by completeSubworkflow
+// merge results if all done, report success
+func (wi *WorkflowInstance) FinalizeScatter() (ok bool, err error) {
+	ok = false
+
+	var firstChild *WorkflowInstance
+
+	for _, childStr := range wi.ScatterChildren {
+		var scatterChild *WorkflowInstance
+		scatterChild, err = wi.GetWorkflowInstance(childStr)
+		if err != nil {
+			err = fmt.Errorf("(FinalizeScatter) GetWorkflowInstance returned: %s", err.Error())
+			return
+		}
+
+		if firstChild == nil {
+			firstChild = scatterChild
+		}
+		var scatterChildState string
+		scatterChildState, err = scatterChild.GetState(true)
+		if err != nil {
+			err = fmt.Errorf("(FinalizeScatter) scatterChild.GetState returned: %s", err.Error())
+			return
+		}
+
+		if scatterChildState == WIStateSuspended {
+			wi.SetState(WIStateSuspended, true, "FinalizeScatter")
+			return
+		}
+
+		if scatterChildState != WIStateCompleted {
+			return
+		}
+
+	}
+
+	step := wi.WorkflowStep
+	//step.Out
+	//step.Scatter
+	outputs := cwl.Job_document{}
+	scatterMap := make(map[string]interface{})
+
+	for _, outputID := range step.Scatter {
+		scatterMap[outputID] = nil
+	}
+
+	for _, output := range step.Out {
+		outputBase := path.Base(output.Id)
+
+		_, isScatterOuput := scatterMap[outputBase]
+		if !isScatterOuput {
+			var obj cwl.CWLType
+			obj, ok, err = firstChild.GetOutput(outputBase, true)
+			if err != nil {
+				err = fmt.Errorf("(FinalizeScatter) firstChild.GetOutput returned: %s", err.Error())
+				return
+			}
+
+			if !ok {
+				err = fmt.Errorf("(FinalizeScatter) firstChild.GetOutput did not find outputBase %s", outputBase)
+				return
+			}
+
+			outputs = outputs.Add(outputBase, obj)
+			continue
+		}
+
+		// scatter output
+
+		outputArray := cwl.Array{}
+
+		// collect results (for given output)
+		for _, childStr := range wi.ScatterChildren {
+			var scatterChild *WorkflowInstance
+			scatterChild, err = wi.GetWorkflowInstance(childStr)
+			if err != nil {
+				err = fmt.Errorf("(FinalizeScatter) GetWorkflowInstance returned: %s", err.Error())
+				return
+			}
+
+			var obj cwl.CWLType
+			obj, ok, err = scatterChild.GetOutput(outputBase, true)
+			if err != nil {
+				err = fmt.Errorf("(FinalizeScatter) firstChild.GetOutput returned: %s", err.Error())
+				return
+			}
+
+			if !ok {
+				err = fmt.Errorf("(FinalizeScatter) firstChild.GetOutput did not find outputBase %s", outputBase)
+				return
+			}
+
+			outputArray = append(outputArray, obj)
+
+		}
+
+		firstChild.Outputs = firstChild.Outputs.Add(outputBase, &outputArray)
+
+	}
+
+	ok = true
+	return
+}
+
+// GetWorkflowInstance get child wokflowInstance
+func (wi *WorkflowInstance) GetWorkflowInstance(localName string) (returnWI *WorkflowInstance, err error) {
+	names := ""
+	for _, child := range wi.WorkflowInstances {
+		if child.LocalID == localName {
+			returnWI = child
+			return
+		}
+		names += "," + child.LocalID
+	}
+
+	err = fmt.Errorf("(GetWorkflowInstance) child %s not found (only found: %s)", localName, names)
+	return
+}
+
+// AddWorkflowInstance _
+func (wi *WorkflowInstance) AddWorkflowInstance(child *WorkflowInstance) (err error) {
+
+	wi.WorkflowInstances = append(wi.WorkflowInstances, child)
+
+	return
 }

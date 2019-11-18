@@ -28,9 +28,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fsouza/go-dockerclient"
+	docker "github.com/fsouza/go-dockerclient"
 )
 
+// Shock_Dockerimage_attributes _
 type Shock_Dockerimage_attributes struct {
 	Id          string `bson:"id" json:"id"`                       // this is docker image id, not Shock id
 	Name        string `bson:"name" json:"name"`                   // docker image name
@@ -38,6 +39,7 @@ type Shock_Dockerimage_attributes struct {
 	BaseImageId string `bson:"base_image_id" json:"base_image_id"` // could used to reference parent image
 }
 
+// WaitContainerResult _
 type WaitContainerResult struct {
 	Error  error
 	Status int
@@ -175,6 +177,7 @@ func processor(control chan int) {
 	//control <- ID_WORKER //we are ending
 }
 
+// RunWorkunit _
 func RunWorkunit(workunit *core.Workunit) (pstats *core.WorkPerf, err error) {
 
 	stderr_exists := false
@@ -269,13 +272,14 @@ func RunWorkunit(workunit *core.Workunit) (pstats *core.WorkPerf, err error) {
 
 		//fmt.Println("CWL-runner receipt:")
 		//spew.Dump(result_doc)
-		workunit.CWLWorkunit.Outputs = result_doc
+		workunit.CWLWorkunit.Outputs = &result_doc
 
 	}
 
 	return
 }
 
+// RunWorkunitDocker _
 func RunWorkunitDocker(workunit *core.Workunit) (pstats *core.WorkPerf, err error) {
 	pstats = new(core.WorkPerf)
 	pstats.MaxMemUsage = -1
@@ -943,6 +947,7 @@ func RunWorkunitDocker(workunit *core.Workunit) (pstats *core.WorkPerf, err erro
 	return
 }
 
+// RunWorkunitDirect _
 func RunWorkunitDirect(workunit *core.Workunit) (pstats *core.WorkPerf, stderr_exists bool, err error) {
 	stderr_exists = false
 	var args []string
@@ -1190,6 +1195,7 @@ func runPreWorkExecutionScript(workunit *core.Workunit) (err error) {
 	return
 }
 
+// SetEnv _
 func SetEnv(workunit *core.Workunit) (envkeys []string, err error) {
 	for key, val := range workunit.Cmd.Environ.Public {
 		if err := os.Setenv(key, val); err == nil {
@@ -1210,12 +1216,14 @@ func SetEnv(workunit *core.Workunit) (envkeys []string, err error) {
 	return
 }
 
+// UnSetEnv _
 func UnSetEnv(envkeys []string) {
 	for _, key := range envkeys {
 		os.Setenv(key, "")
 	}
 }
 
+// FetchPrivateEnvByWorkId _
 func FetchPrivateEnvByWorkId(workid string) (envs map[string]string, err error) {
 	targeturl := fmt.Sprintf("%s/work/%s?privateenv&client=%s", conf.SERVER_URL, workid, core.Self.ID)
 	var headers httpclient.Header

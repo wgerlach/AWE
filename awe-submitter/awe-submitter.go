@@ -86,7 +86,7 @@ func mainWrapper() (err error) {
 
 		inputfilePath := path.Dir(jobFile)
 
-		var jobDoc *cwl.Job_document
+		var jobDoc cwl.Job_document
 
 		jobDoc, err = cwl.ParseJobFile(jobFile)
 		if err != nil {
@@ -213,7 +213,7 @@ func createNormalizedSubmisson(aweAuth string, shockAuth string, workflowFile st
 	//fmt.Printf("job path: %s\n", inputfile_path) // needed to resolve relative paths
 	//fmt.Printf("createNormalizedSubmisson A\n")
 	// ### parse job file
-	var jobDoc *cwl.Job_document
+	var jobDoc cwl.Job_document
 
 	if jobFile != "" {
 
@@ -225,7 +225,7 @@ func createNormalizedSubmisson(aweAuth string, shockAuth string, workflowFile st
 			return
 		}
 	} else {
-		jobDoc = &cwl.Job_document{}
+		jobDoc = cwl.Job_document{}
 		inputfilePath = path.Dir(workflowFile)
 
 	}

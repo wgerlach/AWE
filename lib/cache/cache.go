@@ -604,6 +604,26 @@ func ProcessIOData(native interface{}, currentPath string, basePath string, ioTy
 		}
 
 		return
+	case cwl.Job_document:
+		//fmt.Printf("found Job_document\n")
+		//job_doc_ptr := native.(cwl.Job_document)
+
+		job_doc := native.(cwl.Job_document)
+
+		for i, _ := range job_doc {
+
+			//id := value.Id
+			//fmt.Printf("recurse into key: %s\n", id)
+			var sub_count int
+			sub_count, err = ProcessIOData(job_doc[i], currentPath, basePath, ioType, shockClient, context, lazyUpload, removeIDField)
+			if err != nil {
+				return
+			}
+			count += sub_count
+		}
+
+		return
+
 	case cwl.NamedCWLType:
 		named := native.(cwl.NamedCWLType)
 		var sub_count int

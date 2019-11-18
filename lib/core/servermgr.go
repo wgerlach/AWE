@@ -415,18 +415,20 @@ func (qm *ServerMgr) updateWorkflowInstancesMapTask(workflowInstance *WorkflowIn
 
 					subworkflowID := subworkflow.GetID()
 
-					fmt.Printf("(updateWorkflowInstancesMapTask) Creating Workflow %s\n", subworkflowID)
+					logger.Debug(3, "(updateWorkflowInstancesMapTask) SubWorkflow ID: %s (%s)", subworkflowID, spew.Sdump(subworkflow))
 
 					newWIName := instanceStepName
 
 					// TODO assign inputs
 					//var workflow_inputs cwl.Job_document
 
+					logger.Debug(3, "(updateWorkflowInstancesMapTask) creating new WI: %s (%d) (wiLocalID: %s, subworkflowID: %s)", newWIName, len(step.Scatter), wiLocalID, subworkflowID)
+
 					//panic("creating new subworkflow " + newWIName)
 					var new_wi *WorkflowInstance
-					new_wi, err = NewWorkflowInstance(newWIName, jobid, subworkflowID, job, workflowInstance.LocalID)
+					new_wi, err = NewWorkflowInstance(newWIName, jobid, subworkflowID, job, workflowInstance.LocalID, "")
 					if err != nil {
-						err = fmt.Errorf("(updateWorkflowInstancesMapTask) NewWorkflowInstance returned: %s", err.Error())
+						err = fmt.Errorf("(updateWorkflowInstancesMapTask) (step %d) NewWorkflowInstance (%s) returned: %s", i, newWIName, err.Error())
 						return
 					}
 
@@ -434,8 +436,16 @@ func (qm *ServerMgr) updateWorkflowInstancesMapTask(workflowInstance *WorkflowIn
 					new_wi.WorkflowStep = step
 					new_wi.WorkflowStepID = step.ID
 
-					if len(step.Scatter) > 0 {
-						logger.Debug(3, "(updateWorkflowInstancesMapTask) detected scatter")
+					isScatterWI := false
+					if len(step.Scatter) > 0 && new_wi.ScatterParent == "" {
+						logger.Debug(3, "(updateWorkflowInstancesMapTask) scatter %s yes", newWIName)
+						isScatterWI = true
+					} else {
+						logger.Debug(3, "(updateWorkflowInstancesMapTask) scatter %s no", newWIName)
+					}
+
+					if isScatterWI {
+
 						//new_wi.IsScatter = true
 						err = new_wi.SetProcessType(ProcessTypeScatter, false, false)
 						if err != nil {
@@ -464,7 +474,7 @@ func (qm *ServerMgr) updateWorkflowInstancesMapTask(workflowInstance *WorkflowIn
 						return
 					}
 
-					if len(step.Scatter) > 0 {
+					if isScatterWI {
 
 						logger.Debug(3, "(updateWorkflowInstancesMapTask) Step has Scatter: %s (wiLocalID: %s)", step.ID, wiLocalID)
 
@@ -474,15 +484,18 @@ func (qm *ServerMgr) updateWorkflowInstancesMapTask(workflowInstance *WorkflowIn
 							err = fmt.Errorf("(updateWorkflowInstancesMapTask) new_wi.WorkflowStep == nil")
 							return
 						}
-						fmt.Println("new_wi, before")
-						spew.Dump(new_wi)
+						//fmt.Println("new_wi, before")
+						//spew.Dump(new_wi)
 
 						//job *Job, workflowInputMap cwl.JobDocMap
+
+						// create scatter children (tools or workflows)
+
 						_, err = qm.processInstanceEnQueueScatter(workflowInstance, new_wi, job, workflowInputMap)
 						if err != nil {
-							fmt.Println("new_wi, after")
-							spew.Dump(new_wi)
-							fmt.Println("dying because of: " + err.Error())
+							//fmt.Println("new_wi, after")
+							//spew.Dump(new_wi)
+							//fmt.Println("(updateWorkflowInstancesMapTask) processInstanceEnQueueScatter returned: " + err.Error())
 							//panic("arrrgghh")
 							err = fmt.Errorf("(updateWorkflowInstancesMapTask) processInstanceEnQueueScatter returned: %s", err.Error())
 							return
@@ -568,7 +581,7 @@ func (qm *ServerMgr) updateWorkflowInstancesMapTask(workflowInstance *WorkflowIn
 
 			var reason string
 			var ok bool
-			ok, reason, err = qm.completeSubworkflow(job, workflowInstance) // taskCompleted
+			ok, reason, err = qm.completeSubworkflow(job, workflowInstance) // updateWorkflowInstancesMapTask
 			if err != nil {
 				err = fmt.Errorf("(updateWorkflowInstancesMapTask) completeSubworkflow returned: %s", err.Error())
 				return
@@ -623,7 +636,7 @@ func (qm *ServerMgr) updateWorkflowInstancesMap() (err error) {
 
 			jerror := &JobError{
 
-				ServerNotes: fmt.Sprintf("WorkflowInstance failed: %s", errorMessage),
+				ServerNotes: fmt.Sprintf("updateWorkflowInstancesMapTask failed: %s", errorMessage),
 				Status:      JOB_STAT_SUSPEND,
 			}
 			if err = qm.SuspendJob(jobID, nil, jerror); err != nil {
@@ -1477,7 +1490,7 @@ func (qm *ServerMgr) handleLastWorkunit(clientid string, task *Task, task_str st
 		//if task.Scatter_parent == nil {
 
 		// map process output to step output
-		stepOutputArray := &cwl.Job_document{}
+		stepOutputArray := cwl.Job_document{}
 		logger.Debug(3, "(handleLastWorkunit) len(task.WorkflowStep.Out): %d", len(task.WorkflowStep.Out))
 		for i, _ := range task.WorkflowStep.Out {
 			step_output := &task.WorkflowStep.Out[i]
@@ -1526,7 +1539,7 @@ func (qm *ServerMgr) handleLastWorkunit(clientid string, task *Task, task_str st
 		}
 
 		logger.Debug(3, "(handleLastWorkunit) call task.SetStepOutput with %d outputs", stepOutputArray.Len())
-		err = task.SetStepOutput(*stepOutputArray, true)
+		err = task.SetStepOutput(stepOutputArray, true)
 		if err != nil {
 			err = fmt.Errorf("(handleLastWorkunit) task.SetStepOutput returned: %s", err.Error())
 			return
@@ -2760,7 +2773,7 @@ func (qm *ServerMgr) isTaskReady(taskID Task_Unique_Identifier, task *Task) (rea
 // creates and enqueues scatter children
 func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *WorkflowInstance, processInstance ProcessInstance, job *Job, workflowInputMap cwl.JobDocMap) (notice *Notice, err error) {
 	notice = nil
-	fmt.Printf("(processInstanceEnQueueScatter) start")
+	fmt.Printf("(processInstanceEnQueueScatter) start\n")
 
 	// processInstance is either one:
 	var task *Task
@@ -2770,6 +2783,7 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 		err = fmt.Errorf("(processInstanceEnQueueScatter) parentWorkflowInstance.Inputs == nil")
 		return
 	}
+	processStr := processInstance.GetIDStr()
 
 	switch processInstance.(type) {
 	case *Task:
@@ -2781,7 +2795,6 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 		return
 	}
 
-	_ = workflowInstance
 	// TODO store info that this has been evaluated
 	//cwlStep := task.WorkflowStep
 
@@ -2952,7 +2965,7 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 
 			//panic("sad")
 
-			err = fmt.Errorf("(processInstanceEnQueueScatter) scatterInputObject type is not *cwl.Array, got %s ", reflect.TypeOf(scatterInputObject))
+			err = fmt.Errorf("(processInstanceEnQueueScatter) (processStr: %s) scatterInputObject type is not *cwl.Array, got %s (scatterInputSourceStr=%s, %s)", processStr, reflect.TypeOf(scatterInputObject), scatterInputSourceStr, spew.Sdump(scatterInputObject))
 			return
 		}
 		//fmt.Println("parentWorkflowInstance:")
@@ -2968,8 +2981,6 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 
 	}
 	scatterType := ""
-
-	processStr := processInstance.GetIDStr()
 
 	// dotproduct with 2 or more arrays
 	if scatterMethod == "" || strings.ToLower(scatterMethod) == "dotproduct" {
@@ -3132,7 +3143,8 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 
 			//new_out := cwl.NewNamedCWLType(out_name, new_array)
 			//spew.Dump(*notice.Results)
-			notice.Results = notice.Results.Add(outName, newArray)
+			res := notice.Results.Add(outName, newArray)
+			notice.Results = &res
 			//spew.Dump(*notice.Results)
 		}
 
@@ -3156,6 +3168,13 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 	basename := path.Base(processStr)
 
 	parentIDStr := strings.TrimSuffix(processStr, "/"+basename)
+
+	if parentIDStr == "" {
+		err = fmt.Errorf("(processInstanceEnQueueScatter) parentIDStr empty (processStr=%s)", processStr)
+		return
+	}
+
+	logger.Debug(3, "(processInstanceEnQueueScatter) parentIDStr: %s", parentIDStr)
 
 	if parentIDStr == processStr {
 		err = fmt.Errorf("(processInstanceEnQueueScatter) parentIDStr == taskID.TaskName")
@@ -3198,11 +3217,21 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 		} else {
 			logger.Debug(3, "(processInstanceEnQueueScatter) New WorkflowInstance, parent: %s and scatterTaskName: %s", parentIDStr, scatterProcessName)
 			scatterProcessNameComplete := path.Join(parentIDStr, scatterProcessName)
-			subWorkflowInstance, err = NewWorkflowInstance(scatterProcessNameComplete, job.ID, parentWorkflowInstance.WorkflowDefinition, job, parentWiUUID)
+			subWorkflowInstance, err = NewWorkflowInstance(scatterProcessNameComplete, job.ID, workflowInstance.WorkflowDefinition, job, parentWiUUID, parentIDStr)
 			if err != nil {
 				err = fmt.Errorf("(processInstanceEnQueueScatter) NewWorkflowInstance returned: %s", err.Error())
 				return
 			}
+
+			//fmt.Println("subWorkflowInstance:")
+			//spew.Dump(subWorkflowInstance)
+			//panic("ohhhhhhh")
+
+			if subWorkflowInstance.ScatterParent != parentIDStr {
+				err = fmt.Errorf("(processInstanceEnQueueScatter) subWorkflowInstance.ScatterParent != parentIDStr")
+				return
+			}
+
 			subProcess = subWorkflowInstance
 
 		}
@@ -3210,10 +3239,11 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 		if subTask != nil {
 			subTask.ScatterParent = &task.Task_Unique_Identifier
 
-		} else {
-			subWorkflowInstance.ScatterParent = workflowInstance.ID
-
 		}
+		//else {
+		//	subWorkflowInstance.ScatterParent = workflowInstance.ID
+
+		//}
 		//aweTask.Scatter_task = true
 
 		// err = subProcess.SetState(ProcessStatInit, false, "processInstanceEnQueueScatter") // no need to lock yet
@@ -3333,6 +3363,11 @@ func (qm *ServerMgr) processInstanceEnQueueScatter(parentWorkflowInstance *Workf
 				return
 			}
 
+			err = workflowInstance.AddWorkflowInstance(subWorkflowInstance)
+			if err != nil {
+				err = fmt.Errorf("(processInstanceEnQueueScatter) AddWorkflowInstance.Add returned: %s", err.Error())
+				return
+			}
 		}
 	}
 
@@ -3879,6 +3914,10 @@ func (qm *ServerMgr) GetSourceFromWorkflowInstanceInput(workflowInstance *Workfl
 	// search for input object
 	obj, ok = workflowInstance.Inputs.Get(srcBase)
 	if ok {
+		workflowInstanceLocalID := workflowInstance.LocalID
+
+		fmt.Printf("(GetSourceFromWorkflowInstanceInput) workflowInstance.Inputs.Get returned object for %s (workflowInstanceLocalID: %s, %s)\n", srcBase, workflowInstanceLocalID, spew.Sdump(obj))
+
 		ok = true
 		return
 	}
@@ -4177,6 +4216,8 @@ func (qm *ServerMgr) getCWLSource(job *Job, workflowInstance *WorkflowInstance, 
 			reason = "GetSourceFromWorkflowInstanceInput returned: " + stepReason
 		}
 
+		fmt.Printf("(getCWLSource) success %s -> %s\n", original_src, spew.Sdump(obj))
+
 		return
 	}
 
@@ -4219,6 +4260,7 @@ func (qm *ServerMgr) getCWLSource(job *Job, workflowInstance *WorkflowInstance, 
 	if !ok {
 		reason = "(getCWLSource) getCWLSourceFromStepOutput returned: " + stepReason
 	}
+
 	return
 
 	// //srcBase := path.Base(src)
@@ -5494,8 +5536,9 @@ func (qm *ServerMgr) taskCompletedScatter(job *Job, wi *WorkflowInstance, task *
 		// }
 		//fmt.Println("final output_array:")
 		//spew.Dump(output_array)
-		scatterParentTask.StepOutput = scatterParentTask.StepOutput.Add(workflowStepOutputID, &outputArray)
+		res := scatterParentTask.StepOutput.Add(workflowStepOutputID, &outputArray)
 
+		scatterParentTask.StepOutput = &res
 	}
 
 	task = scatterParentTask
@@ -5568,6 +5611,16 @@ func (qm *ServerMgr) completeSubworkflow(job *Job, workflowInstance *WorkflowIns
 			return
 		}
 
+	}
+
+	// check if this is a scatter child
+	if workflowInstance.ScatterParent != "" {
+		var scatterOK bool
+		scatterOK, err = workflowInstance.FinalizeScatter()
+		if !scatterOK {
+			reason = "scatter child not completed"
+			return
+		}
 	}
 
 	// check subworkflows

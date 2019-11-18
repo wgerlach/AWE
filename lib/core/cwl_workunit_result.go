@@ -47,14 +47,14 @@ func NewNotice(native interface{}, context *cwl.WorkflowContext) (workunitResult
 		if hasResults {
 			if results != nil {
 
-				var resultsJobdoc *cwl.Job_document
+				var resultsJobdoc cwl.Job_document
 				resultsJobdoc, err = cwl.NewJob_documentFromNamedTypes(results, context)
 				if err != nil {
 					err = fmt.Errorf("(NewNotice) NewJob_documentFromNamedTypes returns %s", err.Error())
 					return
 				}
 
-				workunitResult.Results = resultsJobdoc
+				workunitResult.Results = &resultsJobdoc
 			} else {
 				logger.Debug(2, "(NewNotice) results == nil")
 			}
