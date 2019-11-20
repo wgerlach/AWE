@@ -5621,6 +5621,7 @@ func (qm *ServerMgr) completeSubworkflow(job *Job, workflowInstance *WorkflowIns
 			reason = "scatter child not completed"
 			return
 		}
+		logger.Debug(3, "(completeSubworkflow) FinalizeScatter was successful")
 	}
 
 	// check subworkflows

@@ -1102,11 +1102,22 @@ func (wi *WorkflowInstance) FinalizeScatter() (ok bool, err error) {
 
 	}
 
+	if wi.WorkflowStep == nil {
+		err = fmt.Errorf("(FinalizeScatter) wi.WorkflowStep is empty")
+		return
+	}
+
 	step := wi.WorkflowStep
+
 	//step.Out
 	//step.Scatter
 	outputs := cwl.Job_document{}
 	scatterMap := make(map[string]interface{})
+
+	if step.Scatter == nil {
+		err = fmt.Errorf("(FinalizeScatter) step.Scatter is empty")
+		return
+	}
 
 	for _, outputID := range step.Scatter {
 		scatterMap[outputID] = nil
